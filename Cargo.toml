@@ -6,3 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+gitlab = "0.1410.0"
+serde = { version = "1.0", features = ["derive"] }
+url = "2.2.2"
+clap = "3.1.18"
