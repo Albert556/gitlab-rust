@@ -66,10 +66,10 @@ fn cli() -> Command<'static> {
 fn main() {
     let local_path = PathBuf::from("/Users/albertguo/Documents/wiqun/wiqun_code");
 
-    // let token = "glpat-rT4-TEfsiQYW3GWXyepa";
-    // let client = Gitlab::new("gitlab.com", token).unwrap();
-    let token = "ztZH-Z4FWmW6seNwtzGk";
-    let client = Gitlab::new_insecure("gitlab.dev.wiqun.com", token).unwrap();
+    let token = "glpat-rT4-TEfsiQYW3GWXyepa";
+    let client = Gitlab::new("gitlab.com", token).unwrap();
+    // let token = "ztZH-Z4FWmW6seNwtzGk";
+    // let client = Gitlab::new_insecure("gitlab.dev.wiqun.com", token).unwrap();
 
     if !local_path.exists() {
         println!("{:?} is not exists", local_path.as_os_str());
