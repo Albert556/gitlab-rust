@@ -1,146 +1,86 @@
-use std::fmt::Debug;
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
-use clap::{arg, Command};
-use gitlab::api::{self, groups, projects, Query};
-use gitlab::Gitlab;
-use serde::Deserialize;
-
-// The return type of a `Project`. Note that GitLab may contain more information, but you can
-// define your structure to only fetch what is needed.
-#[derive(Debug, Deserialize)]
-struct Project {
-    id: u64,
-    default_branch: Option<String>,
-    ssh_url_to_repo: String,
-    http_url_to_repo: String,
-    web_url: String,
-    name: String,
-    name_with_namespace: String,
-    path: String,
-    path_with_namespace: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct Group {
-    id: u64,
-    name: String,
-    path: String,
-    visibility: String,
-    web_url: String,
-    full_name: String,
-    full_path: String,
-    parent_id: Option<u64>,
-}
-
-fn cli() -> Command<'static> {
-    Command::new("gitlabOp")
-        .about("A gitlab CLI")
-        .subcommand_required(true)
-        .arg_required_else_help(true)
-        .allow_external_subcommands(true)
-        .allow_invalid_utf8_for_external_subcommands(true)
-        .subcommand(
-            Command::new("clone")
-                .about("Clones repos")
-                .arg(arg!(<REMOTE> "The remote to clone"))
-                .arg_required_else_help(true),
-        )
-    // .subcommand(
-    //     Command::new("pull")
-    //         .about("adds things")
-    //         .arg_required_else_help(true)
-    //         .arg(arg!(<PATH> ... "Stuff to add").allow_invalid_utf8(true)),
-    // )
-    // .subcommand(
-    //     Command::new("stash")
-    //         .args_conflicts_with_subcommands(true)
-    //         .args(push_args())
-    //         .subcommand(Command::new("push").args(push_args()))
-    //         .subcommand(Command::new("pop").arg(arg!([STASH])))
-    //         .subcommand(Command::new("apply").arg(arg!([STASH]))),
-    // )
-}
+use gitlab::{
+    api::{self, Query},
+    Gitlab, Group, Project,
+};
 
 fn main() {
-    let local_path = PathBuf::from("/Users/albertguo/Documents/wiqun/wiqun_code");
+    // let local_path = PathBuf::from("/Users/albertguo/Documents/wiqun/wiqun_code");
 
-    let token = "glpat-rT4-TEfsiQYW3GWXyepa";
-    let client = Gitlab::new("gitlab.com", token).unwrap();
-    // let token = "ztZH-Z4FWmW6seNwtzGk";
-    // let client = Gitlab::new_insecure("gitlab.dev.wiqun.com", token).unwrap();
+    // let token = "glpat-rT4-TEfsiQYW3GWXyepa";
+    // let client = Gitlab::new("gitlab.com", token).unwrap();
+    let token = "ztZH-Z4FWmW6seNwtzGk";
+    let client = Gitlab::new_insecure("gitlab.dev.wiqun.com", token).unwrap();
 
-    if !local_path.exists() {
-        println!("{:?} is not exists", local_path.as_os_str());
-        return;
-    }
-    if token == "" {
-        println!("token is not exists");
-    }
-
-    clone_repository(&client, &local_path);
+    // let all_groups = get_all_groups(&client);
+    let mut all_groups: Vec<Group> = vec![];
+    let groups_name = vec!["tl", "jd"];
+    groups_name.iter().for_each(|&group_name| {
+        let groupe = api::groups::Group::builder()
+            .group(group_name)
+            .build()
+            .unwrap();
+        let group = groupe.query(&client).unwrap();
+        let mut subgroups: Vec<Group> = get_subgroup_in_group(&client, &group);
+        all_groups.push(group);
+        all_groups.append(&mut subgroups);
+    });
+    all_groups.iter().for_each(|group_ptr| {
+        let projects = get_projects_in_group(&client, group_ptr);
+        projects.iter().for_each(|project_ptr: &Project| {
+            print!("will clone {}", project_ptr.path_with_namespace);
+            git_clone_command(
+                project_ptr.ssh_url_to_repo.as_str(),
+                std::env::current_dir()
+                    .unwrap()
+                    .join("code")
+                    .join(project_ptr.path_with_namespace.as_str())
+                    .as_os_str()
+                    .to_str()
+                    .unwrap(),
+            );
+        });
+    });
 }
 
-fn clone_repository(client: &Gitlab, local_path: &PathBuf) {
-    let mut repo_clone_fail: Vec<Project> = Vec::new();
-    let mut repo_clone_success: Vec<Project> = Vec::new();
+// fn get_last_path_string(path: &Path) -> &str {
+//     match path.file_name() {
+//         Some(last) => last.to_str().unwrap(),
+//         None => "",
+//     }
+// }
 
-    let groups = get_all_groups(&client);
-    for group in &groups {
-        let projects = get_projects_in_group(client, group);
+// fn get_all_groups(client: &Gitlab) -> Vec<Group> {
+//     let groups_endpoint = api::groups::Groups::builder()
+//         .top_level_only(false)
+//         // 注释说是用 full path 但是结果并不是，可能是用 path 排序
+//         // 暂时不用排序，从结果看相对有序
+//         .order_by(api::groups::GroupOrderBy::Path)
+//         .build()
+//         .unwrap();
+//     let groups: Vec<Group> = api::paged(groups_endpoint, api::Pagination::All)
+//         .query(client)
+//         .unwrap();
 
-        for project in projects {
-            let mut lp = local_path.clone();
-            let name_with_namespace = project.name_with_namespace.clone();
-            let paths = name_with_namespace.split("/");
-            for p in paths {
-                let pp = p.trim();
-                lp.push(pp);
-            }
-            // println!(
-            //     "Clone \"{}@{}\" to {:?}",
-            //     project.name_with_namespace.replace(" / ", "/"),
-            //     project.default_branch.as_ref().unwrap().as_str(),
-            //     lp.as_os_str()
-            // );
-            if lp.exists() {
-                println!("\"{}\" already exists, skip\n", project.name);
-                repo_clone_success.push(project);
-                continue;
-            }
-            let result = git_clone_command(project.ssh_url_to_repo.as_str(), &lp);
-            match result {
-                true => repo_clone_success.push(project),
-                false => repo_clone_fail.push(project),
-            }
-        }
-    }
+//     return groups;
+// }
 
-    println!("\nclone result:");
-    println!("success: {}", repo_clone_success.len());
-    println!("failed: {}", repo_clone_fail.len());
-}
-
-fn get_all_groups(client: &Gitlab) -> Vec<Group> {
-    let groups_endpoint = groups::Groups::builder()
-        .top_level_only(true)
+fn get_subgroup_in_group(client: &Gitlab, group: &Group) -> Vec<Group> {
+    let subgroup_endpoint = api::groups::subgroups::GroupSubgroups::builder()
+        .group(group.id.value())
         .build()
         .unwrap();
-    // let groups: Vec<Group> = groups_endpoint.query(client).unwrap();
-
-    let groups = api::paged(groups_endpoint, api::Pagination::Limit(200))
-        .query(client)
-        .unwrap();
-    // println!("groups_endpoint: {:?}\n", groups_endpoint);
-    // println!("groups: {:?}\n", groups);
-
+    let groups: Vec<Group> = subgroup_endpoint.query(client).unwrap();
     return groups;
 }
 
 fn get_projects_in_group(client: &Gitlab, group: &Group) -> Vec<Project> {
-    let group_projects_endpoint = groups::projects::GroupProjects::builder()
-        .group(group.id)
+    let group_projects_endpoint = api::groups::projects::GroupProjects::builder()
+        .group(group.id.value())
         .build()
         .unwrap();
     let group_projects: Vec<Project> = group_projects_endpoint.query(client).unwrap();
@@ -151,27 +91,67 @@ fn get_projects_in_group(client: &Gitlab, group: &Group) -> Vec<Project> {
     return group_projects;
 }
 
-fn get_all_projects(client: &Gitlab) -> Vec<Project> {
-    let mut projects_builder = projects::Projects::builder();
-    projects_builder.owned(true);
-    let projects_endpoint = projects_builder.build().unwrap();
-    let projects: Vec<Project> = projects_endpoint.query(client).unwrap();
+// fn get_all_projects(client: &Gitlab) -> Vec<Project> {
+//     let projects_endpoint = api::projects::Projects::builder().build().unwrap();
+//     let projects: Vec<Project> = projects_endpoint.query(client).unwrap();
 
-    // println!("projects_endpoint: {:?}\n", projects_endpoint);
-    // println!("projects: {:?}\n", projects);
+//     // println!("projects_endpoint: {:?}\n", projects_endpoint);
+//     // println!("projects: {:?}\n", projects);
 
-    return projects;
-}
+//     return projects;
+// }
 
-fn git_clone_command(git_remote: &str, local_path: &Path) -> bool {
+// fn clone_repository(project: Project, local_path: &PathBuf) {
+//     let mut repo_clone_success: Vec<Project> = vec![];
+//     let mut repo_clone_failed: Vec<Project> = vec![];
+//     let result = git_clone_command(project.ssh_url_to_repo.as_str(), &local_path);
+//     match result {
+//         true => repo_clone_success.push(project),
+//         false => repo_clone_failed.push(project),
+//     }
+
+//     println!("clone result:");
+// }
+
+fn git_clone_command(remote_url: &str, local_path: &str) -> bool {
     let child = std::process::Command::new("git")
         .arg("clone")
-        .arg(git_remote)
-        .arg(local_path.as_os_str())
+        .arg(remote_url)
+        .arg(local_path)
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
     let output = child.wait_with_output().unwrap();
+    print!("\n\n");
 
     return output.status.success();
 }
+
+// fn cli() -> Command<'static> {
+//     Command::new("gitlabOp")
+//         .about("A gitlab CLI")
+//         .subcommand_required(true)
+//         .arg_required_else_help(true)
+//         .allow_external_subcommands(true)
+//         .allow_invalid_utf8_for_external_subcommands(true)
+//         .subcommand(
+//             Command::new("clone")
+//                 .about("Clones repos")
+//                 .arg(arg!(<REMOTE> "The remote to clone"))
+//                 .arg_required_else_help(true),
+//         )
+//     // .subcommand(
+//     //     Command::new("pull")
+//     //         .about("adds things")
+//     //         .arg_required_else_help(true)
+//     //         .arg(arg!(<PATH> ... "Stuff to add").allow_invalid_utf8(true)),
+//     // )
+//     // .subcommand(
+//     //     Command::new("stash")
+//     //         .args_conflicts_with_subcommands(true)
+//     //         .args(push_args())
+//     //         .subcommand(Command::new("push").args(push_args()))
+//     //         .subcommand(Command::new("pop").arg(arg!([STASH])))
+//     //         .subcommand(Command::new("apply").arg(arg!([STASH]))),
+//     // )
+// }
