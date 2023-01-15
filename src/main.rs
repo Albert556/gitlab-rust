@@ -1,4 +1,5 @@
-use std::io::{Result, Write};
+use std::borrow::{Borrow, BorrowMut};
+use std::io::{BufRead, BufReader, Result, Write};
 use std::{
     fs::File,
     path::{Path, PathBuf},
@@ -18,7 +19,40 @@ fn main() {
     let token = "ztZH-Z4FWmW6seNwtzGk";
     let client = Gitlab::new_insecure("gitlab.dev.wiqun.com", token).unwrap();
 
-    // let groups_name = vec!["tl", "jd"];
+    let groups_name = vec!["tl", "jd", "op", "dp", "ml"];
+    let groups = name_to_group(&client, groups_name);
+    groups.into_iter().for_each(|group| {
+        clone_projects_under_group(&client, &group, &local_path, true);
+    });
+}
+
+fn name_to_group(client: &Gitlab, groups_name: Vec<&str>) -> Vec<Group> {
+    let mut groups: Vec<Group> = vec![];
+    let mut group_builder = api::groups::Group::builder();
+    for &group_name in &groups_name {
+        let group_endpoint = group_builder.group(group_name).build().unwrap();
+        let group = group_endpoint.query(client).unwrap();
+        groups.push(group);
+    }
+    groups
+}
+
+fn clone_projects_under_group(
+    client: &Gitlab,
+    group: &Group,
+    local_path: &PathBuf,
+    is_recursion: bool,
+) {
+    let projects = get_projects_under_group(client, &group);
+    projects.iter().for_each(|project| {
+        let _ = clone_repository(&project, local_path);
+    });
+    if is_recursion {
+        let subgroups = get_subgroups_under_group(client, &group, false);
+        subgroups.iter().for_each(|subgroup| {
+            clone_projects_under_group(client, subgroup, local_path, true);
+        });
+    }
 }
 
 /// .
@@ -78,40 +112,26 @@ fn get_projects(client: &Gitlab) -> Vec<Project> {
     return projects;
 }
 
-fn clone_repository(project: Project, local_path: &PathBuf) {
-    let mut repo_clone_success: Vec<Project> = vec![];
-    let mut repo_clone_failed: Vec<Project> = vec![];
+fn clone_repository(project: &Project, local_path: &PathBuf) -> bool {
+    let project_dir_path = local_path.join(&project.path_with_namespace);
 
     let result = git_clone_command(
         project.ssh_url_to_repo.as_str(),
-        local_path.as_os_str().to_str().unwrap(),
+        project_dir_path.as_os_str().to_str().unwrap(),
     );
-    match result {
-        true => repo_clone_success.push(project),
-        false => repo_clone_failed.push(project),
-    }
-
-    if repo_clone_failed.len() != 0 {
-        println!("clone faild: {}", repo_clone_failed.len());
-        for project in &repo_clone_failed {
-            print!("{} ", project.path_with_namespace);
-        }
-        println!("");
-    } else {
-        println!("all cloned success!");
-    }
+    result
 }
 
-fn git_clone_command(remote_url: &str, local_path: &str) -> bool {
+fn git_clone_command(url: &str, local_path: &str) -> bool {
     let child = std::process::Command::new("git")
         .arg("clone")
-        .arg(remote_url)
+        .arg(url)
         .arg(local_path)
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
     let output = child.wait_with_output().unwrap();
-    print!("\n\n");
+    print!("\n");
 
     return output.status.success();
 }
