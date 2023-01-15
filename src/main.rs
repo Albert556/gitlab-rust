@@ -1,4 +1,6 @@
+use std::io::{Result, Write};
 use std::{
+    fs::File,
     path::{Path, PathBuf},
     process::Stdio,
 };
@@ -9,109 +11,96 @@ use gitlab::{
 };
 
 fn main() {
-    // let local_path = PathBuf::from("/Users/albertguo/Documents/wiqun/wiqun_code");
+    let local_path = PathBuf::from("/Users/albertguo/Documents/wiqun/wiqun_code");
 
     // let token = "glpat-rT4-TEfsiQYW3GWXyepa";
     // let client = Gitlab::new("gitlab.com", token).unwrap();
     let token = "ztZH-Z4FWmW6seNwtzGk";
     let client = Gitlab::new_insecure("gitlab.dev.wiqun.com", token).unwrap();
 
-    // let all_groups = get_all_groups(&client);
-    let mut all_groups: Vec<Group> = vec![];
-    let groups_name = vec!["tl", "jd"];
-    groups_name.iter().for_each(|&group_name| {
-        let groupe = api::groups::Group::builder()
-            .group(group_name)
-            .build()
-            .unwrap();
-        let group = groupe.query(&client).unwrap();
-        let mut subgroups: Vec<Group> = get_subgroup_in_group(&client, &group);
-        all_groups.push(group);
-        all_groups.append(&mut subgroups);
-    });
-    all_groups.iter().for_each(|group_ptr| {
-        let projects = get_projects_in_group(&client, group_ptr);
-        projects.iter().for_each(|project_ptr: &Project| {
-            print!("will clone {}", project_ptr.path_with_namespace);
-            git_clone_command(
-                project_ptr.ssh_url_to_repo.as_str(),
-                std::env::current_dir()
-                    .unwrap()
-                    .join("code")
-                    .join(project_ptr.path_with_namespace.as_str())
-                    .as_os_str()
-                    .to_str()
-                    .unwrap(),
-            );
-        });
-    });
+    // let groups_name = vec!["tl", "jd"];
 }
 
-// fn get_last_path_string(path: &Path) -> &str {
-//     match path.file_name() {
-//         Some(last) => last.to_str().unwrap(),
-//         None => "",
-//     }
-// }
+/// .
+///
+/// # Panics
+///
+/// Panics if .
+fn get_groups(client: &Gitlab) -> Vec<Group> {
+    let groups_endpoint = api::groups::Groups::builder()
+        .top_level_only(false)
+        // 注释说是用 full path 但是结果并不是，可能是用 path 排序
+        // .order_by(api::groups::GroupOrderBy::Path)
+        .build()
+        .unwrap();
+    let mut groups: Vec<Group> = api::paged(groups_endpoint, api::Pagination::All)
+        .query(client)
+        .unwrap();
+    groups.sort_by(|a, b| a.full_path.to_lowercase().cmp(&b.full_path.to_lowercase()));
 
-// fn get_all_groups(client: &Gitlab) -> Vec<Group> {
-//     let groups_endpoint = api::groups::Groups::builder()
-//         .top_level_only(false)
-//         // 注释说是用 full path 但是结果并不是，可能是用 path 排序
-//         // 暂时不用排序，从结果看相对有序
-//         .order_by(api::groups::GroupOrderBy::Path)
-//         .build()
-//         .unwrap();
-//     let groups: Vec<Group> = api::paged(groups_endpoint, api::Pagination::All)
-//         .query(client)
-//         .unwrap();
+    return groups;
+}
 
-//     return groups;
-// }
-
-fn get_subgroup_in_group(client: &Gitlab, group: &Group) -> Vec<Group> {
+fn get_subgroups_under_group(client: &Gitlab, group: &Group, is_recursion: bool) -> Vec<Group> {
     let subgroup_endpoint = api::groups::subgroups::GroupSubgroups::builder()
         .group(group.id.value())
         .build()
         .unwrap();
-    let groups: Vec<Group> = subgroup_endpoint.query(client).unwrap();
-    return groups;
+    let subgroups: Vec<Group> = subgroup_endpoint.query(client).unwrap();
+    if !is_recursion {
+        return subgroups;
+    }
+    // let mut result: Vec<>
+
+    return subgroups;
 }
 
-fn get_projects_in_group(client: &Gitlab, group: &Group) -> Vec<Project> {
+fn get_projects_under_group(client: &Gitlab, group: &Group) -> Vec<Project> {
     let group_projects_endpoint = api::groups::projects::GroupProjects::builder()
         .group(group.id.value())
         .build()
         .unwrap();
     let group_projects: Vec<Project> = group_projects_endpoint.query(client).unwrap();
 
-    // println!("group_projects_endpoint: {:?}\n", group_projects_endpoint);
-    // println!("group_projects: {:?}\n", group_projects);
-
     return group_projects;
 }
 
-// fn get_all_projects(client: &Gitlab) -> Vec<Project> {
-//     let projects_endpoint = api::projects::Projects::builder().build().unwrap();
-//     let projects: Vec<Project> = projects_endpoint.query(client).unwrap();
+fn get_projects(client: &Gitlab) -> Vec<Project> {
+    let projects_endpoint = api::projects::Projects::builder().build().unwrap();
+    let mut projects: Vec<Project> = projects_endpoint.query(client).unwrap();
 
-//     // println!("projects_endpoint: {:?}\n", projects_endpoint);
-//     // println!("projects: {:?}\n", projects);
+    projects.sort_by(|a, b| {
+        a.path_with_namespace
+            .to_lowercase()
+            .cmp(&b.path_with_namespace.to_lowercase())
+    });
 
-//     return projects;
-// }
+    return projects;
+}
 
-// fn clone_repository(project: Project, local_path: &PathBuf) {
-//     let mut repo_clone_success: Vec<Project> = vec![];
-//     let mut repo_clone_failed: Vec<Project> = vec![];
-//     let result = git_clone_command(project.ssh_url_to_repo.as_str(), &local_path);
-//     match result {
-//         true => repo_clone_success.push(project),
-//         false => repo_clone_failed.push(project),
-//     }
+fn clone_repository(project: Project, local_path: &PathBuf) {
+    let mut repo_clone_success: Vec<Project> = vec![];
+    let mut repo_clone_failed: Vec<Project> = vec![];
 
-//     println!("clone result:");
-// }
+    let result = git_clone_command(
+        project.ssh_url_to_repo.as_str(),
+        local_path.as_os_str().to_str().unwrap(),
+    );
+    match result {
+        true => repo_clone_success.push(project),
+        false => repo_clone_failed.push(project),
+    }
+
+    if repo_clone_failed.len() != 0 {
+        println!("clone faild: {}", repo_clone_failed.len());
+        for project in &repo_clone_failed {
+            print!("{} ", project.path_with_namespace);
+        }
+        println!("");
+    } else {
+        println!("all cloned success!");
+    }
+}
 
 fn git_clone_command(remote_url: &str, local_path: &str) -> bool {
     let child = std::process::Command::new("git")
