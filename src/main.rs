@@ -14,9 +14,9 @@ use gitlab::{
 fn main() {
     let local_path = PathBuf::from("/Users/albertguo/Documents/wiqun/wiqun_code");
 
-    // let token = "glpat-rT4-TEfsiQYW3GWXyepa";
+    // let token = "";
     // let client = Gitlab::new("gitlab.com", token).unwrap();
-    let token = "ztZH-Z4FWmW6seNwtzGk";
+    let token = "";
     let client = Gitlab::new_insecure("gitlab.dev.wiqun.com", token).unwrap();
 
     let groups_name = vec!["tl", "jd", "op", "dp", "ml"];
