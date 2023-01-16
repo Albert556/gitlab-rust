@@ -125,6 +125,7 @@ fn clone_repository(project: &Project, local_path: &PathBuf) -> bool {
 fn git_clone_command(url: &str, local_path: &str) -> bool {
     let child = std::process::Command::new("git")
         .arg("clone")
+        .arg("-b")
         .arg(url)
         .arg(local_path)
         .stdout(Stdio::piped())
