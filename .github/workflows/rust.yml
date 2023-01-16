@@ -2,14 +2,10 @@ name: Rust
 
 on:
   push:
-    branches: 
-      - 'main'
-    tags: 
+    tags:
       - v**
   pull_request:
-    branches: 
-      - 'main'
-    tags: 
+    tags:
       - v**
   workflow_dispatch:
 
@@ -21,9 +17,8 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
-
+    if: github.ref_type == 'branch' || github.ref_name == 'main'
     runs-on: ${{ matrix.os }}
-
     steps:
     - uses: actions/checkout@v3
     - name: Build
