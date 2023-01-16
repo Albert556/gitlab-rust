@@ -3,10 +3,10 @@ name: Rust
 on:
   push:
     branches: [ "main" ]
-    tags: '**'
+    tags: v**
   pull_request:
     branches: [ "main" ]
-    tags: '**'
+    tags: v**
 
 env:
   CARGO_TERM_COLOR: always
