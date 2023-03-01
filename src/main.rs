@@ -12,7 +12,9 @@ use gitlab::{
 };
 
 fn main() {
-    let local_path = PathBuf::from("/Users/albertguo/Documents/wiqun/wiqun_code");
+    // let local_path = PathBuf::from("/Users/albertguo/Documents/wiqun/wiqun_code");
+    let local_path = PathBuf::from(r"");
+
 
     // let token = "";
     // let client = Gitlab::new("gitlab.com", token).unwrap();
@@ -20,16 +22,16 @@ fn main() {
     let client = Gitlab::new_insecure("gitlab.dev.wiqun.com", token).unwrap();
 
     let groups_name = vec!["tl", "jd", "op", "dp", "ml"];
-    let groups = name_to_group(&client, groups_name);
+    let groups = name_to_group(&client, &groups_name);
     groups.into_iter().for_each(|group| {
         clone_projects_under_group(&client, &group, &local_path, true);
     });
 }
 
-fn name_to_group(client: &Gitlab, groups_name: Vec<&str>) -> Vec<Group> {
+fn name_to_group(client: &Gitlab, groups_name: &Vec<&str>) -> Vec<Group> {
     let mut groups: Vec<Group> = vec![];
     let mut group_builder = api::groups::Group::builder();
-    for &group_name in &groups_name {
+    for &group_name in groups_name {
         let group_endpoint = group_builder.group(group_name).build().unwrap();
         let group = group_endpoint.query(client).unwrap();
         groups.push(group);
@@ -113,24 +115,32 @@ fn get_projects(client: &Gitlab) -> Vec<Project> {
 }
 
 fn clone_repository(project: &Project, local_path: &PathBuf) -> bool {
-    let project_dir_path = local_path.join(&project.path_with_namespace);
+    let mut project_dir_path = local_path.clone();
+    let pn = &project.path_with_namespace;
+    let ss = pn.split("/");
+    ss.for_each(|s| {
+        project_dir_path.push(s);
+    });
 
     let result = git_clone_command(
         project.ssh_url_to_repo.as_str(),
         project_dir_path.as_os_str().to_str().unwrap(),
+        "dev"
     );
     result
 }
 
-fn git_clone_command(url: &str, local_path: &str) -> bool {
+fn git_clone_command(url: &str, local_path: &str, branch: &str) -> bool {
     let child = std::process::Command::new("git")
         .arg("clone")
         .arg("-b")
+        .arg(branch)
         .arg(url)
         .arg(local_path)
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
+
     let output = child.wait_with_output().unwrap();
     print!("\n");
 
